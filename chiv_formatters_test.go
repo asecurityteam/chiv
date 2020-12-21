@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"gavincabbage.com/chiv"
+	"github.com/asecurityteam/chiv"
 )
 
 type testCase struct {

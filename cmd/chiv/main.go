@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/urfave/cli"
 
-	"gavincabbage.com/chiv"
+	"github.com/asecurityteam/chiv"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"

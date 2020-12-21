@@ -13,7 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"gavincabbage.com/chiv"
+	"github.com/asecurityteam/chiv"
 )
 
 func TestArchiveRows(t *testing.T) {
