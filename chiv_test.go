@@ -1,3 +1,4 @@
+//go:build unit
 // +build unit
 
 package chiv_test
@@ -8,7 +9,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 
 	"github.com/stretchr/testify/require"

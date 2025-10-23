@@ -8,8 +8,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -20,7 +21,7 @@ type Database interface {
 
 // Uploader uploads input to S3.
 type Uploader interface {
-	UploadWithContext(ctx aws.Context, input *s3manager.UploadInput, opts ...func(*s3manager.Uploader)) (*s3manager.UploadOutput, error)
+	Upload(ctx context.Context, input *s3.PutObjectInput, opts ...func(*manager.Uploader)) (*manager.UploadOutput, error)
 }
 
 // Archive a database table to S3.
@@ -232,7 +233,7 @@ func (a *Archiver) upload(ctx context.Context, r io.ReadCloser, table string, bu
 		}
 	}
 
-	if _, err := a.s3.UploadWithContext(ctx, &s3manager.UploadInput{
+	if _, err := a.s3.Upload(ctx, &s3.PutObjectInput{
 		Body:   r,
 		Bucket: aws.String(bucket),
 		Key:    aws.String(a.key),

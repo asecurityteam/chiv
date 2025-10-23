@@ -1,14 +1,14 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/urfave/cli"
 
 	"github.com/asecurityteam/chiv"
@@ -86,7 +86,7 @@ func main() {
 	cli.HandleExitCoder(app.Run(os.Args))
 }
 
-type config struct {
+type chivConfig struct {
 	url     string
 	table   string
 	bucket  string
@@ -105,29 +105,28 @@ func run(ctx *cli.Context) (err error) {
 		return cli.ShowAppHelp(ctx)
 	}
 
-	config := from(ctx)
+	chivCfg := from(ctx)
 
-	db, err := sql.Open(config.driver, config.url)
+	db, err := sql.Open(chivCfg.driver, chivCfg.url)
 	if err != nil {
 		return fmt.Errorf("opening database connection: %w", err)
 	}
 
-	awsSession, err := session.NewSessionWithOptions(session.Options{
-		Config:            *aws.NewConfig(),
-		Profile:           os.Getenv("AWS_PROFILE"),
-		SharedConfigState: session.SharedConfigEnable,
-	})
+	cfg, err := config.LoadDefaultConfig(
+		context.Background(),
+		config.WithSharedConfigProfile(os.Getenv("AWS_PROFILE")),
+	)
 	if err != nil {
 		return fmt.Errorf("opening AWS session: %w", err)
 	}
-	client := s3.New(awsSession)
-	uploader := s3manager.NewUploaderWithClient(client)
+	client := s3.NewFromConfig(cfg)
+	uploader := manager.NewUploader(client)
 
-	return chiv.Archive(db, uploader, config.table, config.bucket, config.options...)
+	return chiv.Archive(db, uploader, chivCfg.table, chivCfg.bucket, chivCfg.options...)
 }
 
-func from(ctx *cli.Context) config {
-	cfg := config{
+func from(ctx *cli.Context) chivConfig {
+	cfg := chivConfig{
 		url:    ctx.String("database"),
 		table:  ctx.String("table"),
 		bucket: ctx.String("bucket"),

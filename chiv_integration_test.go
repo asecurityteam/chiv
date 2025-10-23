@@ -1,4 +1,4 @@
-// +build integration
+//go:build integration
 
 package chiv_test
 
@@ -6,17 +6,15 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/asecurityteam/chiv"
@@ -294,18 +292,19 @@ func TestArchiver_Archive(t *testing.T) {
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
 			var (
+				ctx        = context.Background()
 				db         = newDB(t, test.driver, test.database)
-				s3client   = newS3Client(t, os.Getenv("AWS_REGION"), os.Getenv("AWS_ENDPOINT"))
-				uploader   = s3manager.NewUploaderWithClient(s3client)
-				downloader = s3manager.NewDownloaderWithClient(s3client)
+				s3client   = newS3Client(ctx, t, os.Getenv("AWS_REGION"), os.Getenv("AWS_ENDPOINT"))
+				uploader   = manager.NewUploader(s3client)
+				downloader = manager.NewDownloader(s3client)
 			)
 			defer db.Close()
 
 			exec(t, db, readFile(t, test.setup))
 			defer exec(t, db, readFile(t, test.teardown))
 
-			createBucket(t, s3client, test.bucket)
-			defer deleteBucket(t, s3client, test.bucket)
+			createBucket(ctx, t, s3client, test.bucket)
+			defer deleteBucket(ctx, t, s3client, test.bucket)
 
 			subject := chiv.NewArchiver(db, uploader, test.options...)
 			require.NotNil(t, subject)
@@ -314,7 +313,7 @@ func TestArchiver_Archive(t *testing.T) {
 				require.NoError(t, subject.Archive(call.table, test.bucket, call.options...))
 
 				expected := readFile(t, call.expected)
-				actual := download(t, downloader, test.bucket, call.key)
+				actual := download(ctx, t, downloader, test.bucket, call.key)
 				require.Equal(t, expected, actual)
 			}
 		})
@@ -332,21 +331,22 @@ func TestArchiveWithContext(t *testing.T) {
 		teardown   = "./testdata/postgres/postgres_teardown.sql"
 		expected   = "./testdata/postgres/postgres.csv"
 		db         = newDB(t, driver, database)
-		s3client   = newS3Client(t, os.Getenv("AWS_REGION"), os.Getenv("AWS_ENDPOINT"))
-		uploader   = s3manager.NewUploaderWithClient(s3client)
-		downloader = s3manager.NewDownloaderWithClient(s3client)
+		ctx        = context.Background()
+		s3client   = newS3Client(ctx, t, os.Getenv("AWS_REGION"), os.Getenv("AWS_ENDPOINT"))
+		uploader   = manager.NewUploader(s3client)
+		downloader = manager.NewDownloader(s3client)
 	)
 	defer db.Close()
 
 	exec(t, db, readFile(t, setup))
 	defer exec(t, db, readFile(t, teardown))
 
-	createBucket(t, s3client, bucket)
-	defer deleteBucket(t, s3client, bucket)
+	createBucket(ctx, t, s3client, bucket)
+	defer deleteBucket(ctx, t, s3client, bucket)
 
-	require.NoError(t, chiv.ArchiveWithContext(context.Background(), db, uploader, table, bucket))
+	require.NoError(t, chiv.ArchiveWithContext(ctx, db, uploader, table, bucket))
 
-	actual := download(t, downloader, bucket, key)
+	actual := download(ctx, t, downloader, bucket, key)
 	require.Equal(t, readFile(t, expected), actual)
 }
 
@@ -360,20 +360,21 @@ func TestArchiveRowsJoin(t *testing.T) {
 		teardown   = "./testdata/postgres/join_teardown.sql"
 		expected   = "./testdata/postgres/join.csv"
 		db         = newDB(t, driver, database)
-		s3client   = newS3Client(t, os.Getenv("AWS_REGION"), os.Getenv("AWS_ENDPOINT"))
-		uploader   = s3manager.NewUploaderWithClient(s3client)
-		downloader = s3manager.NewDownloaderWithClient(s3client)
+		ctx        = context.Background()
+		s3client   = newS3Client(ctx, t, os.Getenv("AWS_REGION"), os.Getenv("AWS_ENDPOINT"))
+		uploader   = manager.NewUploader(s3client)
+		downloader = manager.NewDownloader(s3client)
 	)
 	defer db.Close()
 
 	exec(t, db, readFile(t, setup))
 	defer exec(t, db, readFile(t, teardown))
 
-	createBucket(t, s3client, bucket)
-	defer deleteBucket(t, s3client, bucket)
+	createBucket(ctx, t, s3client, bucket)
+	defer deleteBucket(ctx, t, s3client, bucket)
 
 	rows, err := db.Query(`
-		SELECT first_table.id, first_text, first_int, second_text, second_int 
+		SELECT first_table.id, first_text, first_int, second_text, second_int
 		FROM first_table
 		JOIN second_table ON first_table.id = second_table.id;
 	`)
@@ -383,7 +384,7 @@ func TestArchiveRowsJoin(t *testing.T) {
 
 	require.NoError(t, chiv.ArchiveRows(rows, uploader, bucket, chiv.WithKey("join.csv")))
 
-	actual := download(t, downloader, bucket, key)
+	actual := download(ctx, t, downloader, bucket, key)
 	require.Equal(t, readFile(t, expected), actual)
 }
 
@@ -414,23 +415,19 @@ func newDB(t testing.TB, driver string, url string) *sql.DB {
 	return db
 }
 
-func newS3Client(t testing.TB, region string, endpoint string) *s3.S3 {
+func newS3Client(ctx context.Context, t testing.TB, region string, endpoint string) *s3.Client {
 	t.Helper()
 
-	awsConfig := aws.NewConfig().
-		WithRegion(region).
-		WithDisableSSL(true).
-		WithCredentials(credentials.NewEnvCredentials())
-
-	awsSession, err := session.NewSession(awsConfig)
+	awsConfig, err := config.LoadDefaultConfig(
+		ctx,
+		config.WithRegion(region),
+		config.WithBaseEndpoint(endpoint),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	client := s3.New(awsSession)
-	client.Endpoint = endpoint
-
-	return client
+	return s3.NewFromConfig(awsConfig)
 }
 
 func exec(t testing.TB, db *sql.DB, statements string) {
@@ -442,39 +439,47 @@ func exec(t testing.TB, db *sql.DB, statements string) {
 	}
 }
 
-func createBucket(t testing.TB, client *s3.S3, name string) {
+func createBucket(ctx context.Context, t testing.TB, client *s3.Client, name string) {
 	t.Helper()
 
-	if _, err := client.CreateBucket(&s3.CreateBucketInput{
-		Bucket: aws.String(name),
-	}); err != nil {
+	if _, err := client.CreateBucket(ctx,
+		&s3.CreateBucketInput{
+			Bucket: aws.String(name),
+		},
+	); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func deleteBucket(t testing.TB, client *s3.S3, name string) {
+func deleteBucket(ctx context.Context, t testing.TB, client *s3.Client, name string) {
 	t.Helper()
 
 	// we could do this more cleanly with BatchDeleteIterator, but localstack doesn't like batch deletes :shrug:
-	out, err := client.ListObjects(&s3.ListObjectsInput{
-		Bucket: aws.String(name),
-	})
+	out, err := client.ListObjects(ctx,
+		&s3.ListObjectsInput{
+			Bucket: aws.String(name),
+		},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	for _, o := range out.Contents {
-		if _, err := client.DeleteObject(&s3.DeleteObjectInput{
-			Key:    o.Key,
-			Bucket: aws.String(name),
-		}); err != nil {
+		if _, err := client.DeleteObject(ctx,
+			&s3.DeleteObjectInput{
+				Key:    o.Key,
+				Bucket: aws.String(name),
+			},
+		); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	if _, err := client.DeleteBucket(&s3.DeleteBucketInput{
-		Bucket: aws.String(name),
-	}); err != nil {
+	if _, err := client.DeleteBucket(ctx,
+		&s3.DeleteBucketInput{
+			Bucket: aws.String(name),
+		},
+	); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -482,7 +487,7 @@ func deleteBucket(t testing.TB, client *s3.S3, name string) {
 func readFile(t testing.TB, path string) string {
 	t.Helper()
 
-	contents, err := ioutil.ReadFile(path)
+	contents, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -490,11 +495,11 @@ func readFile(t testing.TB, path string) string {
 	return string(contents)
 }
 
-func download(t testing.TB, downloader *s3manager.Downloader, bucket string, key string) string {
+func download(ctx context.Context, t testing.TB, downloader *manager.Downloader, bucket string, key string) string {
 	t.Helper()
 
-	b := &aws.WriteAtBuffer{}
-	_, err := downloader.Download(b, &s3.GetObjectInput{
+	b := &manager.WriteAtBuffer{}
+	_, err := downloader.Download(ctx, b, &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	})
