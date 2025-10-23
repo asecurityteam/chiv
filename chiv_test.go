@@ -1,16 +1,16 @@
 //go:build unit
-// +build unit
 
 package chiv_test
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"io"
 	"testing"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	"github.com/stretchr/testify/require"
 
@@ -260,7 +260,7 @@ type uploader struct {
 	uploadErr error
 }
 
-func (u *uploader) UploadWithContext(ctx aws.Context, input *s3manager.UploadInput, opts ...func(*s3manager.Uploader)) (*s3manager.UploadOutput, error) {
+func (u *uploader) Upload(ctx context.Context, input *s3.PutObjectInput, opts ...func(*manager.Uploader)) (*manager.UploadOutput, error) {
 	p := make([]byte, 1)
 	for {
 		if _, err := input.Body.Read(p); err != nil {
